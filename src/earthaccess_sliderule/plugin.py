@@ -7,16 +7,22 @@ lock and ``init`` runs once, inside the worker.
 
 from __future__ import annotations
 
+import json
+import os
+import re
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from typing import Any
 
-from earthaccess_plugin_spec import PluginBase, Support
+from earthaccess_plugin_spec import Capabilities, Capability, PluginBase
 
 __all__ = ["SlideRulePlugin"]
 
-# The allowlist is authoritative, so a miss is a hard no. VERIFY against
-# SlideRule's docs, including whether a version is needed as well.
+# SlideRule keys datasets off the CMR short name. Most match exactly; GEDI L4A
+# collections are versioned (e.g. GEDI_L4A_AGB_Density_V2_1_2056), so prefix
+# match those. "ATL03_ANC_MASKS" and friends are deliberately excluded by the
+# exact-match ATL entries.
 _SUPPORTED_SHORT_NAMES = frozenset(
     {
         # ICESat-2
@@ -30,11 +36,38 @@ _SUPPORTED_SHORT_NAMES = frozenset(
         "GEDI01_B",
         "GEDI02_A",
         "GEDI02_B",
-        "GEDI04_A",
-        "GEDI_L2A",
-        "GEDI_L4A",
     }
 )
+_SUPPORTED_PREFIXES = ("GEDI_L4A",)
+_HDF_EXTENSIONS = (".h5", ".hdf5")
+# SlideRule resource filenames look like ATL03_...h5 / GEDI04_A_...h5. The
+# prefixed GEDI GranuleUR (GEDI_L4A_AGB_Density_V2_1.GEDI04_A_...h5) does not.
+_RESOURCE_NAME_RE = re.compile(r"^(ATL|GEDI)\d")
+
+# Server-side APIs (from the sliderule client): ICESat-2 and GEDI processors.
+_SLIDERULE_APIS = frozenset(
+    {
+        "atl03sp",
+        "atl03vp",
+        "atl03x",
+        "atl06p",
+        "atl06sp",
+        "atl08p",
+        "atl13sp",
+        "atl24v",
+        "gedil1b",
+        "gedil2a",
+        "gedil4a",
+    }
+)
+_SLIDERULE_OPERATIONS = frozenset(
+    {
+        Capability.PROCESS,
+        Capability.SUBSET_BBOX,
+        Capability.SUBSET_TEMPORAL,
+    }
+)
+_SLIDERULE_FORMATS = frozenset({"geoparquet"})
 
 
 class SlideRulePlugin(PluginBase):
@@ -48,7 +81,7 @@ class SlideRulePlugin(PluginBase):
     class Options:
         api: str  # required, for example 'atl06p'
         parms: dict = field(default_factory=dict)
-        aoi: dict | None = None
+        aoi: Any = None  # GeoJSON dict, file path, or GeoDataFrame
         resources: list[str] | None = None  # overrides results.native_ids
 
     def __init__(self, ctx: Any) -> None:
@@ -66,25 +99,86 @@ class SlideRulePlugin(PluginBase):
     def _request(self, results: Any, options: Options) -> Any:
         resources = options.resources
         if resources is None and results is not None:
-            resources = list(results.native_ids)
+            resources = _resource_names(results)
 
         def call() -> Any:
             import sliderule
 
-            with self._lock:
-                if not self._ready:
-                    sliderule.init(**self._init_kwargs)
-                    self._ready = True
-                # VERIFY: run() signature (resources as an argument or in parms).
-                return sliderule.run(
-                    options.api, options.parms, aoi=options.aoi, resources=resources
-                )
+            aoi, cleanup = _as_region_file(options.aoi)
+            try:
+                with self._lock:
+                    if not self._ready:
+                        sliderule.init(**self._init_kwargs)
+                        self._ready = True
+                    return sliderule.run(
+                        options.api, options.parms, aoi=aoi, resources=resources
+                    )
+            finally:
+                if cleanup and os.path.exists(cleanup):
+                    os.remove(cleanup)
 
         return self.job(call)
 
-    def _supports(self, results: Any) -> Support:
+    def _supports(self, results: Any) -> Capabilities:
         short_name = (getattr(results, "short_name", "") or "").upper()
-        if short_name in _SUPPORTED_SHORT_NAMES:
-            return Support(True)
-        label = short_name or results.collection_id
-        return Support(False, f"{label} is not a SlideRule dataset")
+        supported = short_name in _SUPPORTED_SHORT_NAMES or any(
+            short_name.startswith(prefix) for prefix in _SUPPORTED_PREFIXES
+        )
+        if supported:
+            return Capabilities(
+                True,
+                operations=_SLIDERULE_OPERATIONS,
+                apis=_SLIDERULE_APIS,
+                formats=_SLIDERULE_FORMATS,
+            )
+        label = short_name or getattr(results, "collection_id", "")
+        return Capabilities(False, reason=f"{label} is not a SlideRule dataset")
+
+
+def _resource_names(results: Any) -> list[str]:
+    """SlideRule resource names: the HDF filenames, not the CMR ``GranuleUR``.
+
+    For GEDI the ``GranuleUR`` is prefixed with the collection short name
+    (``GEDI_L4A_....GEDI04_A_....h5``); SlideRule wants the bare filename, which
+    is available on the granules' data links. Fall back to the native ids.
+    """
+
+    names: list[str] = []
+    for umm in results.umm():
+        for related in umm.get("RelatedUrls", []):
+            url = (related.get("URL") or "").split("?")[0].rstrip("/")
+            base = url.rsplit("/", 1)[-1]
+            if (
+                base.endswith(_HDF_EXTENSIONS)
+                and _RESOURCE_NAME_RE.match(base)
+                and base not in names
+            ):
+                names.append(base)
+    if names:
+        return names
+    return [name for name in results.native_ids if name]
+
+
+def _as_region_file(aoi: Any) -> tuple[Any, str | None]:
+    """Normalise ``aoi`` to something ``sliderule.run`` accepts.
+
+    ``sliderule.run`` wants a file path (its own ``aoi != None`` check trips on a
+    DataFrame/dict), so a GeoJSON dict or GeoDataFrame is written to a temp file.
+    Returns ``(source, path_to_delete)``; a path or ``None`` passes through.
+    """
+
+    if aoi is None or isinstance(aoi, str):
+        return aoi, None
+
+    path = tempfile.mktemp(suffix=".geojson")
+    to_file = getattr(aoi, "to_file", None)
+    if callable(to_file):  # GeoDataFrame
+        to_file(path, driver="GeoJSON")
+        return path, path
+
+    geometry = aoi
+    if isinstance(aoi, dict) and aoi.get("type") == "Polygon":
+        geometry = {"type": "Feature", "properties": {}, "geometry": aoi}
+    with open(path, "w") as handle:
+        json.dump(geometry, handle)
+    return path, path

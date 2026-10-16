@@ -1,9 +1,10 @@
 import pytest
-from earthaccess_plugin_spec import Support, UnsupportedCollectionError
+from earthaccess_plugin_spec import Capability, UnsupportedCollectionError
 from earthaccess_plugin_spec.results import GranuleResultSet
 from earthaccess_plugin_spec.testing import fake_context, sample_result_set
 
 from earthaccess_sliderule import SlideRulePlugin
+from earthaccess_sliderule.plugin import _SLIDERULE_APIS
 
 from .fixtures import FakeSlideRule, SlideRuleFixtures, make_granule
 
@@ -44,7 +45,10 @@ class TestRequest:
         plugin = SlideRulePlugin(fake_context())
         with fixtures.backend():
             result = plugin.run(
-                None, api="atl06p", parms={}, aoi={"type": "Point", "coordinates": [0, 0]}
+                None,
+                api="atl06p",
+                parms={},
+                aoi={"type": "Point", "coordinates": [0, 0]},
             )
         assert result["count"] == 0
         assert backend.runs[0]["resources"] is None
@@ -89,7 +93,28 @@ class TestSupport:
     def test_allowlisted(self, short_name):
         plugin = SlideRulePlugin(fake_context())
         results = GranuleResultSet([make_granule(short_name=short_name)])
-        assert plugin.supports(results) == Support(True)
+        capabilities = plugin.supports(results)
+        assert capabilities.ok is True
+        assert capabilities.operations == {
+            Capability.PROCESS,
+            Capability.SUBSET_BBOX,
+            Capability.SUBSET_TEMPORAL,
+        }
+        assert capabilities.apis == _SLIDERULE_APIS
+        assert "geoparquet" in capabilities.formats
+
+    def test_capabilities_by_short_name(self):
+        plugin = SlideRulePlugin(fake_context())
+        capabilities = plugin.capabilities("ATL03")
+        assert capabilities.ok is True
+        assert capabilities.collection == "ATL03"
+
+    def test_versioned_gedi_l4a_is_supported(self):
+        plugin = SlideRulePlugin(fake_context())
+        results = GranuleResultSet(
+            [make_granule(short_name="GEDI_L4A_AGB_Density_V2_1_2056")]
+        )
+        assert plugin.supports(results).ok is True
 
     def test_rejects_landsat(self):
         plugin = SlideRulePlugin(fake_context())
@@ -110,3 +135,30 @@ class TestSupport:
         with fixtures.backend(), pytest.raises(UnsupportedCollectionError):
             plugin.request(results, api="atl06p")
         assert backend.runs == []
+
+
+class TestResourceNames:
+    def test_uses_hdf_filenames_from_related_urls(self):
+        # GEDI GranuleUR is prefixed; SlideRule wants the bare filename.
+        granule = make_granule(ur="GEDI_L4A_AGB_Density_V2_1.GEDI04_A_2019.h5")
+        granule["umm"]["RelatedUrls"] = [
+            {"Type": "GET DATA", "URL": "https://e.org/GEDI04_A_2019.h5"},
+            {"Type": "GET DATA", "URL": "https://e.org/GEDI04_A_2019.h5?token=1"},
+            # The prefixed GranuleUR variant must be ignored.
+            {
+                "Type": "GET DATA",
+                "URL": "https://e.org/GEDI_L4A_AGB_Density_V2_1.GEDI04_A_2019.h5",
+            },
+            {"Type": "EXTENDED METADATA", "URL": "https://e.org/GEDI04_A_2019.xml"},
+        ]
+        from earthaccess_sliderule.plugin import _resource_names
+
+        assert _resource_names(GranuleResultSet([granule])) == ["GEDI04_A_2019.h5"]
+
+    def test_falls_back_to_native_ids(self):
+        from earthaccess_sliderule.plugin import _resource_names
+
+        granule = make_granule(ur="ATL03_20230602091058_11151903_007_01.h5")
+        assert _resource_names(GranuleResultSet([granule])) == [
+            "ATL03_20230602091058_11151903_007_01.h5"
+        ]

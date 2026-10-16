@@ -89,10 +89,16 @@ ea.plugins.sliderule.configure(
 ## Checking that a collection is supported
 
 SlideRule supports a small set of datasets (ICESat-2 and GEDI). The plugin
-rejects anything else early:
+rejects anything else early and lists the processors it can run:
 
 ```python
-ea.plugins.sliderule.supports(results)   # Support(ok=True/False/None, reason=...)
+ea.plugins.sliderule.capabilities("ATL06")
+# Capabilities('sliderule supported ATL06', operations=3)
+#   operations: process, subset_bbox, subset_temporal
+#   apis: atl03sp, atl03vp, atl03x, atl06p, atl06sp, atl08p, atl13sp, atl24v,
+#         gedil1b, gedil2a, gedil4a
+#   formats: geoparquet
+
 ea.plugins.sliderule.run(landsat_results, api="atl06p")
 # UnsupportedCollectionError: sliderule does not support LANDSAT_8_C1 (...):
 #   LANDSAT_8_C1 is not a SlideRule dataset. ...

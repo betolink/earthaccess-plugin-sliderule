@@ -89,4 +89,6 @@ class SlideRuleFixtures(Fixtures):
         self.backend_impl = backend or FakeSlideRule()
 
     def backend(self) -> AbstractContextManager[Any]:
-        return mock.patch.dict(sys.modules, {"sliderule": _module_for(self.backend_impl)})
+        return mock.patch.dict(
+            sys.modules, {"sliderule": _module_for(self.backend_impl)}
+        )
