@@ -131,8 +131,16 @@ class SlideRulePlugin(PluginBase):
                 apis=_SLIDERULE_APIS,
                 formats=_SLIDERULE_FORMATS,
             )
-        label = short_name or getattr(results, "collection_id", "")
+        label = short_name or _peek_collection_id(results) or "these results"
         return Capabilities(False, reason=f"{label} is not a SlideRule dataset")
+
+
+def _peek_collection_id(results: Any) -> str:
+    try:
+        first = next(iter(results), None)
+    except TypeError:
+        return ""
+    return first.get("meta", {}).get("collection-concept-id", "") if first else ""
 
 
 def _resource_names(results: Any) -> list[str]:
@@ -140,11 +148,17 @@ def _resource_names(results: Any) -> list[str]:
 
     For GEDI the ``GranuleUR`` is prefixed with the collection short name
     (``GEDI_L4A_....GEDI04_A_....h5``); SlideRule wants the bare filename, which
-    is available on the granules' data links. Fall back to the native ids.
+    is available on the granules' data links. Streams the resultset, so only the
+    names are retained. Falls back to the granule URs.
     """
 
     names: list[str] = []
-    for umm in results.umm():
+    fallbacks: list[str] = []
+    for granule in results:
+        umm = granule.get("umm", {})
+        ur = umm.get("GranuleUR")
+        if ur and ur not in fallbacks:
+            fallbacks.append(ur)
         for related in umm.get("RelatedUrls", []):
             url = (related.get("URL") or "").split("?")[0].rstrip("/")
             base = url.rsplit("/", 1)[-1]
@@ -154,9 +168,7 @@ def _resource_names(results: Any) -> list[str]:
                 and base not in names
             ):
                 names.append(base)
-    if names:
-        return names
-    return [name for name in results.native_ids if name]
+    return names or fallbacks
 
 
 def _as_region_file(aoi: Any) -> tuple[Any, str | None]:
