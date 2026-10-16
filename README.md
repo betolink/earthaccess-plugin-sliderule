@@ -33,12 +33,12 @@ results = ea.search_data(
     temporal=("2020-01-01", "2020-02-01"),
 )
 
-df = ea.plugins.sliderule.run(
+df = ea.plugins.sliderule.request(
     results,
     api="atl06p",
     parms={"pass_invalid": False},
     aoi={"type": "Polygon", "coordinates": [[[...]]]},
-)
+).results()
 # df is a geopandas.GeoDataFrame of geolocated points
 ```
 
@@ -47,11 +47,11 @@ sent as `resources`). You can also run from an area of interest and parameters
 alone, with no search results — SlideRule does not need them:
 
 ```python
-df = ea.plugins.sliderule.run(
+df = ea.plugins.sliderule.request(
     api="atl06p",
     parms={...},
     aoi={"type": "Polygon", "coordinates": [[[...]]]},
-)
+).results()
 ```
 
 Or work with the job explicitly:
@@ -99,7 +99,7 @@ ea.plugins.sliderule.capabilities("ATL06")
 #         gedil1b, gedil2a, gedil4a
 #   formats: geoparquet
 
-ea.plugins.sliderule.run(landsat_results, api="atl06p")
+ea.plugins.sliderule.request(landsat_results, api="atl06p").results()
 # UnsupportedCollectionError: sliderule does not support LANDSAT_8_C1 (...):
 #   LANDSAT_8_C1 is not a SlideRule dataset. ...
 ```

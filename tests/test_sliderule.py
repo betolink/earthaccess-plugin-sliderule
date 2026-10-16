@@ -21,7 +21,7 @@ class TestRequest:
         fixtures = SlideRuleFixtures(backend=backend)
         plugin = SlideRulePlugin(fake_context())
         with fixtures.backend():
-            result = plugin.run(fixtures.result_set, **fixtures.options)
+            result = plugin.request(fixtures.result_set, **fixtures.options).results()
         assert result["count"] == 1
         assert backend.runs[0]["resources"] == list(fixtures.result_set.native_ids)
         assert backend.runs[0]["api"] == "atl06p"
@@ -31,12 +31,12 @@ class TestRequest:
         fixtures = SlideRuleFixtures(backend=backend)
         plugin = SlideRulePlugin(fake_context())
         with fixtures.backend():
-            plugin.run(
+            plugin.request(
                 fixtures.result_set,
                 api="atl06p",
                 parms={},
                 resources=["custom-1", "custom-2"],
-            )
+            ).results()
         assert backend.runs[0]["resources"] == ["custom-1", "custom-2"]
 
     def test_requires_no_results(self):
@@ -44,12 +44,12 @@ class TestRequest:
         fixtures = SlideRuleFixtures(backend=backend)
         plugin = SlideRulePlugin(fake_context())
         with fixtures.backend():
-            result = plugin.run(
+            result = plugin.request(
                 None,
                 api="atl06p",
                 parms={},
                 aoi={"type": "Point", "coordinates": [0, 0]},
-            )
+            ).results()
         assert result["count"] == 0
         assert backend.runs[0]["resources"] is None
 
@@ -59,8 +59,8 @@ class TestRequest:
         plugin = SlideRulePlugin(fake_context())
         plugin.configure(url="https://sliderule.example", organization="org")
         with fixtures.backend():
-            plugin.run(fixtures.result_set, **fixtures.options)
-            plugin.run(fixtures.result_set, **fixtures.options)
+            plugin.request(fixtures.result_set, **fixtures.options).results()
+            plugin.request(fixtures.result_set, **fixtures.options).results()
         assert backend.inits == [
             {"url": "https://sliderule.example", "organization": "org"}
         ]
@@ -71,9 +71,9 @@ class TestRequest:
         fixtures = SlideRuleFixtures(backend=backend)
         plugin = SlideRulePlugin(fake_context())
         with fixtures.backend():
-            plugin.run(fixtures.result_set, **fixtures.options)
+            plugin.request(fixtures.result_set, **fixtures.options).results()
             plugin.configure(url="https://other.example")
-            plugin.run(fixtures.result_set, **fixtures.options)
+            plugin.request(fixtures.result_set, **fixtures.options).results()
         assert len(backend.inits) == 2
 
 
