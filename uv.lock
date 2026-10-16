@@ -198,7 +198,7 @@ wheels = [
 [[package]]
 name = "earthaccess-plugin-spec"
 version = "0.1.0"
-source = { git = "https://github.com/betolink/earthaccess-plugin-spec.git?branch=main#b4d47c87a93f0d29619c489bce6e839be87397b3" }
+source = { git = "https://github.com/betolink/earthaccess-plugin-spec.git?branch=main#04f2c60b2c48a019dc5e703091ba8edfa374a27b" }
 
 [[package]]
 name = "earthaccess-sliderule"
@@ -227,7 +227,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371 }
 wheels = [
