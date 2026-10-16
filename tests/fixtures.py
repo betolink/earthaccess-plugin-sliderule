@@ -8,9 +8,27 @@ from contextlib import AbstractContextManager
 from typing import Any
 from unittest import mock
 
+from earthaccess_plugin_spec.results import GranuleResultSet
 from earthaccess_plugin_spec.testing import Fixtures
 
-__all__ = ["FakeSlideRule", "SlideRuleFixtures"]
+__all__ = ["FakeSlideRule", "SlideRuleFixtures", "make_granule"]
+
+
+def make_granule(
+    *,
+    collection_id: str = "C-ATL06",
+    concept_id: str = "G1",
+    ur: str = "G1.EXAMPLE",
+    short_name: str = "ATL06",
+    version: str = "006",
+) -> dict[str, Any]:
+    return {
+        "meta": {"concept-id": concept_id, "collection-concept-id": collection_id},
+        "umm": {
+            "GranuleUR": ur,
+            "CollectionReference": {"ShortName": short_name, "Version": version},
+        },
+    }
 
 
 class FakeSlideRule:
@@ -52,6 +70,20 @@ class SlideRuleFixtures(Fixtures):
                 "parms": {"pass_invalid": False},
                 "aoi": {"type": "FeatureCollection", "features": []},
             },
+        )
+        kwargs.setdefault(
+            "result_set", GranuleResultSet([make_granule(collection_id="C-ATL06")])
+        )
+        kwargs.setdefault(
+            "unsupported_result_set",
+            GranuleResultSet(
+                [
+                    make_granule(
+                        collection_id="C-LANDSAT",
+                        short_name="LANDSAT_8_C1",
+                    )
+                ]
+            ),
         )
         super().__init__(**kwargs)
         self.backend_impl = backend or FakeSlideRule()

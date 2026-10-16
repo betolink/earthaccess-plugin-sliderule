@@ -1,9 +1,11 @@
 import pytest
+from earthaccess_plugin_spec import Support, UnsupportedCollectionError
+from earthaccess_plugin_spec.results import GranuleResultSet
 from earthaccess_plugin_spec.testing import fake_context, sample_result_set
 
 from earthaccess_sliderule import SlideRulePlugin
 
-from .fixtures import FakeSlideRule, SlideRuleFixtures
+from .fixtures import FakeSlideRule, SlideRuleFixtures, make_granule
 
 
 class TestOptions:
@@ -80,3 +82,31 @@ def test_entry_point_registered():
 
 def test_sample_result_set_has_native_ids():
     assert sample_result_set().native_ids
+
+
+class TestSupport:
+    @pytest.mark.parametrize("short_name", ["ATL06", "atl06", "GEDI02_A"])
+    def test_allowlisted(self, short_name):
+        plugin = SlideRulePlugin(fake_context())
+        results = GranuleResultSet([make_granule(short_name=short_name)])
+        assert plugin.supports(results) == Support(True)
+
+    def test_rejects_landsat(self):
+        plugin = SlideRulePlugin(fake_context())
+        results = GranuleResultSet(
+            [make_granule(collection_id="C-LANDSAT", short_name="LANDSAT_8_C1")]
+        )
+        support = plugin.supports(results)
+        assert support.ok is False
+        assert "LANDSAT_8_C1" in support.reason
+
+    def test_request_raises_before_backend(self):
+        backend = FakeSlideRule()
+        fixtures = SlideRuleFixtures(backend=backend)
+        plugin = SlideRulePlugin(fake_context())
+        results = GranuleResultSet(
+            [make_granule(collection_id="C-LANDSAT", short_name="LANDSAT_8_C1")]
+        )
+        with fixtures.backend(), pytest.raises(UnsupportedCollectionError):
+            plugin.request(results, api="atl06p")
+        assert backend.runs == []

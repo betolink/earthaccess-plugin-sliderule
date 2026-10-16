@@ -11,9 +11,30 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
-from earthaccess_plugin_spec import PluginBase
+from earthaccess_plugin_spec import PluginBase, Support
 
 __all__ = ["SlideRulePlugin"]
+
+# The allowlist is authoritative, so a miss is a hard no. VERIFY against
+# SlideRule's docs, including whether a version is needed as well.
+_SUPPORTED_SHORT_NAMES = frozenset(
+    {
+        # ICESat-2
+        "ATL03",
+        "ATL06",
+        "ATL08",
+        "ATL09",
+        "ATL13",
+        "ATL24",
+        # GEDI
+        "GEDI01_B",
+        "GEDI02_A",
+        "GEDI02_B",
+        "GEDI04_A",
+        "GEDI_L2A",
+        "GEDI_L4A",
+    }
+)
 
 
 class SlideRulePlugin(PluginBase):
@@ -60,3 +81,10 @@ class SlideRulePlugin(PluginBase):
                 )
 
         return self.job(call)
+
+    def _supports(self, results: Any) -> Support:
+        short_name = (getattr(results, "short_name", "") or "").upper()
+        if short_name in _SUPPORTED_SHORT_NAMES:
+            return Support(True)
+        label = short_name or results.collection_id
+        return Support(False, f"{label} is not a SlideRule dataset")
