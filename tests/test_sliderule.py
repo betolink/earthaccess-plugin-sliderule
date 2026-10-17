@@ -39,6 +39,48 @@ class TestRequest:
             ).results()
         assert backend.runs[0]["resources"] == ["custom-1", "custom-2"]
 
+    def test_defaults_icesat2_asset(self):
+        # Regression: without an asset, SlideRule's processing endpoints
+        # (atl06p, ...) accept the request but return no output. Its own
+        # icesat2 helpers default the asset; sliderule.run does not.
+        backend = FakeSlideRule()
+        fixtures = SlideRuleFixtures(backend=backend)
+        plugin = SlideRulePlugin(fake_context())
+        with fixtures.backend():
+            plugin.request(
+                fixtures.result_set,
+                api="atl06p",
+                parms={},
+                resources=["custom-1"],
+            ).results()
+        assert backend.runs[0]["parms"]["asset"] == "icesat2"
+
+    def test_explicit_asset_is_preserved(self):
+        backend = FakeSlideRule()
+        fixtures = SlideRuleFixtures(backend=backend)
+        plugin = SlideRulePlugin(fake_context())
+        with fixtures.backend():
+            plugin.request(
+                fixtures.result_set,
+                api="atl06p",
+                parms={"asset": "my-asset"},
+                resources=["custom-1"],
+            ).results()
+        assert backend.runs[0]["parms"]["asset"] == "my-asset"
+
+    def test_no_default_asset_for_non_icesat2_api(self):
+        backend = FakeSlideRule()
+        fixtures = SlideRuleFixtures(backend=backend)
+        plugin = SlideRulePlugin(fake_context())
+        with fixtures.backend():
+            plugin.request(
+                fixtures.result_set,
+                api="gedil4a",
+                parms={"asset": "ornldaac-s3"},
+                resources=["custom-1"],
+            ).results()
+        assert backend.runs[0]["parms"] == {"asset": "ornldaac-s3"}
+
     def test_requires_no_results(self):
         backend = FakeSlideRule()
         fixtures = SlideRuleFixtures(backend=backend)

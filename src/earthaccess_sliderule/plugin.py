@@ -101,6 +101,14 @@ class SlideRulePlugin(PluginBase):
         if resources is None and results is not None:
             resources = _resource_names(results)
 
+        # SlideRule's ICESat-2 processing endpoints need an asset to locate the
+        # data (``sliderule.icesat2`` defaults it to this); ``sliderule.run``
+        # does not set one, and without it the server accepts the request but
+        # produces no output.
+        parms = dict(options.parms)
+        if "asset" not in parms and options.api.lower().startswith("atl"):
+            parms["asset"] = "icesat2"
+
         def call() -> Any:
             import sliderule
 
@@ -111,7 +119,7 @@ class SlideRulePlugin(PluginBase):
                         sliderule.init(**self._init_kwargs)
                         self._ready = True
                     return sliderule.run(
-                        options.api, options.parms, aoi=aoi, resources=resources
+                        options.api, parms, aoi=aoi, resources=resources
                     )
             finally:
                 if cleanup and os.path.exists(cleanup):
